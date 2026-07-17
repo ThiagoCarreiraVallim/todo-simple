@@ -4,7 +4,7 @@
 # copy besides the binary itself.
 
 # ---------- Build ----------
-FROM golang:1.22-alpine AS build
+FROM golang:1.26-alpine AS build
 RUN apk add --no-cache git
 WORKDIR /src
 # Separate layer for deps so they're cached across builds as long as go.mod/go.sum don't change.
