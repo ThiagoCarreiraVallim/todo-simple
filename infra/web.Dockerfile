@@ -3,7 +3,7 @@
 # Uses output: 'standalone' (next.config.ts) to produce a minimal bundle.
 
 # ---------- Base ----------
-FROM node:20-alpine AS base
+FROM node:26-alpine AS base
 RUN corepack enable && corepack prepare pnpm@9.0.0 --activate
 RUN apk add --no-cache libc6-compat
 WORKDIR /app
@@ -29,7 +29,7 @@ ENV NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
 RUN pnpm --filter web build
 
 # ---------- Runner ----------
-FROM node:20-alpine AS runner
+FROM node:26-alpine AS runner
 RUN apk add --no-cache wget
 ENV NODE_ENV=production \
     NEXT_TELEMETRY_DISABLED=1 \
