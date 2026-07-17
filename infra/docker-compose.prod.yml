@@ -1,0 +1,90 @@
+# Production compose, designed for a Traefik-fronted host (e.g. Dokploy,
+# Coolify, or any Docker host with Traefik + an external network).
+#
+# Assumptions:
+#   - Postgres runs outside this compose (managed separately). DATABASE_URL
+#     must point to it.
+#   - An external Docker network with Traefik already exists (`edge-network`
+#     below — rename to match your setup).
+#   - Two services: web and api. Each gets its own subdomain:
+#     app.${DOMAIN}, api.${DOMAIN}.
+
+services:
+  api:
+    image: ${API_IMAGE:-todo-api:latest}
+    build:
+      context: ..
+      dockerfile: infra/api.Dockerfile
+    restart: unless-stopped
+    environment:
+      APP_ENV: production
+      API_PORT: 8080
+      DATABASE_URL: ${DATABASE_URL}
+      WEB_ORIGIN: https://app.${DOMAIN}
+    expose:
+      - "8080"
+    networks:
+      - edge-network
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=edge-network
+      - traefik.http.routers.todo-api-http.rule=Host(`api.${DOMAIN}`)
+      - traefik.http.routers.todo-api-http.entrypoints=web
+      - traefik.http.routers.todo-api-http.middlewares=todo-api-redirect
+      - traefik.http.middlewares.todo-api-redirect.redirectscheme.scheme=https
+      - traefik.http.middlewares.todo-api-redirect.redirectscheme.permanent=true
+      - traefik.http.routers.todo-api.rule=Host(`api.${DOMAIN}`)
+      - traefik.http.routers.todo-api.entrypoints=websecure
+      - traefik.http.routers.todo-api.tls=true
+      - traefik.http.routers.todo-api.tls.certresolver=letsencrypt
+      - traefik.http.services.todo-api.loadbalancer.server.port=8080
+      - traefik.http.routers.todo-api.middlewares=todo-api-headers
+      - traefik.http.middlewares.todo-api-headers.headers.accesscontrolallowmethods=GET,POST,PATCH,PUT,DELETE,OPTIONS
+      - traefik.http.middlewares.todo-api-headers.headers.accesscontrolallowheaders=Content-Type
+      - traefik.http.middlewares.todo-api-headers.headers.accesscontrolalloworiginlist=https://app.${DOMAIN}
+      - traefik.http.middlewares.todo-api-headers.headers.accesscontrolmaxage=600
+
+  web:
+    image: ${WEB_IMAGE:-todo-web:latest}
+    build:
+      context: ..
+      dockerfile: infra/web.Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: https://api.${DOMAIN}
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      HOSTNAME: 0.0.0.0
+      NEXT_PUBLIC_API_URL: https://api.${DOMAIN}
+    expose:
+      - "3000"
+    depends_on:
+      - api
+    networks:
+      - edge-network
+    deploy:
+      resources:
+        limits:
+          memory: 384M
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=edge-network
+      - traefik.http.routers.todo-web-http.rule=Host(`app.${DOMAIN}`)
+      - traefik.http.routers.todo-web-http.entrypoints=web
+      - traefik.http.routers.todo-web-http.middlewares=todo-web-redirect
+      - traefik.http.middlewares.todo-web-redirect.redirectscheme.scheme=https
+      - traefik.http.middlewares.todo-web-redirect.redirectscheme.permanent=true
+      - traefik.http.routers.todo-web.rule=Host(`app.${DOMAIN}`)
+      - traefik.http.routers.todo-web.entrypoints=websecure
+      - traefik.http.routers.todo-web.tls=true
+      - traefik.http.routers.todo-web.tls.certresolver=letsencrypt
+      - traefik.http.services.todo-web.loadbalancer.server.port=3000
+
+networks:
+  edge-network:
+    external: true

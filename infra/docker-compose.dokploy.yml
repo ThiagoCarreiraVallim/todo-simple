@@ -1,0 +1,105 @@
+# Stack de produção para Dokploy — self-contained (Postgres + API + Web).
+#
+# A Traefik do Dokploy roteia por domínio via as labels abaixo. Requisitos no
+# servidor Dokploy (já existem numa instalação padrão):
+#   - rede externa `dokploy-network` (criada pelo Dokploy)
+#   - entrypoints `web` (:80) e `websecure` (:443)
+#   - certresolver `letsencrypt`
+#
+# Variáveis obrigatórias (defina no painel do Dokploy → Environment):
+#   WEB_DOMAIN, API_DOMAIN, POSTGRES_PASSWORD
+# Veja .env.dokploy.example para a lista completa.
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-todo}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?defina POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-todo}
+    volumes:
+      - todo_pg_data:/var/lib/postgresql/data
+    networks:
+      - internal
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER:-todo}']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  api:
+    build:
+      context: ..
+      dockerfile: infra/api.Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      APP_ENV: production
+      API_PORT: 8080
+      DATABASE_URL: postgres://${POSTGRES_USER:-todo}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-todo}?sslmode=disable
+      WEB_ORIGIN: https://${WEB_DOMAIN}
+    networks:
+      - internal
+      - dokploy-network
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=dokploy-network
+      # HTTPS
+      - traefik.http.routers.todo-api.rule=Host(`${API_DOMAIN}`)
+      - traefik.http.routers.todo-api.entrypoints=websecure
+      - traefik.http.routers.todo-api.tls=true
+      - traefik.http.routers.todo-api.tls.certresolver=letsencrypt
+      - traefik.http.services.todo-api.loadbalancer.server.port=8080
+      # HTTP → HTTPS
+      - traefik.http.routers.todo-api-http.rule=Host(`${API_DOMAIN}`)
+      - traefik.http.routers.todo-api-http.entrypoints=web
+      - traefik.http.routers.todo-api-http.middlewares=todo-https-redirect
+      - traefik.http.middlewares.todo-https-redirect.redirectscheme.scheme=https
+      - traefik.http.middlewares.todo-https-redirect.redirectscheme.permanent=true
+
+  web:
+    build:
+      context: ..
+      dockerfile: infra/web.Dockerfile
+      args:
+        # NEXT_PUBLIC_* é embutido no bundle no momento do build.
+        NEXT_PUBLIC_API_URL: https://${API_DOMAIN}
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      HOSTNAME: 0.0.0.0
+    networks:
+      - dokploy-network
+    deploy:
+      resources:
+        limits:
+          memory: 384M
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=dokploy-network
+      # HTTPS
+      - traefik.http.routers.todo-web.rule=Host(`${WEB_DOMAIN}`)
+      - traefik.http.routers.todo-web.entrypoints=websecure
+      - traefik.http.routers.todo-web.tls=true
+      - traefik.http.routers.todo-web.tls.certresolver=letsencrypt
+      - traefik.http.services.todo-web.loadbalancer.server.port=3000
+      # HTTP → HTTPS (reusa o middleware definido no serviço api)
+      - traefik.http.routers.todo-web-http.rule=Host(`${WEB_DOMAIN}`)
+      - traefik.http.routers.todo-web-http.entrypoints=web
+      - traefik.http.routers.todo-web-http.middlewares=todo-https-redirect
+
+volumes:
+  todo_pg_data:
+
+networks:
+  internal:
+  dokploy-network:
+    external: true

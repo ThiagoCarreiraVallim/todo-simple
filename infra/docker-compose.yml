@@ -1,0 +1,56 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: todo-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-todo}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-todo_dev}
+      POSTGRES_DB: ${POSTGRES_DB:-todo}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - todo_pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-todo}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  api:
+    build:
+      context: ..
+      dockerfile: infra/api.Dockerfile
+    container_name: todo-api
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      APP_ENV: ${APP_ENV:-production}
+      API_PORT: 8080
+      DATABASE_URL: postgres://${POSTGRES_USER:-todo}:${POSTGRES_PASSWORD:-todo_dev}@postgres:5432/${POSTGRES_DB:-todo}?sslmode=disable
+      WEB_ORIGIN: ${WEB_ORIGIN:-http://localhost:3000}
+    ports:
+      - "${API_PORT:-8080}:8080"
+    profiles: ["full"]
+
+  web:
+    build:
+      context: ..
+      dockerfile: infra/web.Dockerfile
+    container_name: todo-web
+    restart: unless-stopped
+    depends_on:
+      - api
+    environment:
+      NODE_ENV: ${NODE_ENV:-production}
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8080}
+      PORT: 3000
+    ports:
+      - "${WEB_PORT:-3000}:3000"
+    profiles: ["full"]
+
+volumes:
+  todo_pg_data:
+    name: todo_pg_data

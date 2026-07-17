@@ -1,0 +1,34 @@
+{
+  "name": "todo-simple",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Turborepo starter: Go API + Next.js Web + Postgres",
+  "packageManager": "pnpm@9.0.0",
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "scripts": {
+    "bootstrap": "bash scripts/setup.sh",
+    "reset:db": "bash scripts/reset-db.sh",
+    "dev": "bash scripts/dev.sh",
+    "dev:apps": "turbo run dev",
+    "build": "turbo run build",
+    "lint": "turbo run lint",
+    "test": "turbo run test",
+    "format": "prettier --write \"apps/web/**/*.{ts,tsx,md,json}\"",
+    "db:migrate": "pnpm --filter api run migrate",
+    "db:migrate:down": "pnpm --filter api run migrate:down",
+    "infra:up": "docker compose --env-file .env -f infra/docker-compose.yml up -d postgres",
+    "infra:up:full": "docker compose --env-file .env -f infra/docker-compose.yml --profile full up -d",
+    "infra:down": "docker compose --env-file .env -f infra/docker-compose.yml down",
+    "infra:logs": "docker compose --env-file .env -f infra/docker-compose.yml logs -f",
+    "prepare": "husky"
+  },
+  "devDependencies": {
+    "dotenv-cli": "^11.0.0",
+    "husky": "^9.0.0",
+    "lint-staged": "^15.0.0",
+    "prettier": "^3.3.0",
+    "turbo": "^2.0.0"
+  }
+}
