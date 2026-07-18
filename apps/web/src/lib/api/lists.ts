@@ -21,8 +21,18 @@ export interface ListWithTasks extends List {
 }
 
 export const listsApi = {
-  create: (input: { name: string; color?: string }) =>
+  create: (input: { name: string; color?: string; userId?: string }) =>
     apiFetch<List>('/api/lists', { method: 'POST', body: JSON.stringify(input) }),
+
+  // Listas vinculadas a um usuário (para recuperar em outro aparelho).
+  listsByUser: (userId: string) => apiFetch<List[]>(`/api/lists/by-user/${userId}`),
+
+  // Vincula ao usuário as listas conhecidas (por slug) que ainda não têm dono.
+  claim: (userId: string, slugs: string[]) =>
+    apiFetch<{ claimed: number }>('/api/lists/claim', {
+      method: 'POST',
+      body: JSON.stringify({ userId, slugs }),
+    }),
 
   get: (slug: string) => apiFetch<ListWithTasks>(`/api/lists/${slug}`),
 

@@ -20,13 +20,13 @@ func TestCreateListValidation(t *testing.T) {
 	s := newTestService()
 	ctx := context.Background()
 
-	if _, err := s.CreateList(ctx, "   ", ""); !errors.Is(err, ErrInvalidName) {
+	if _, err := s.CreateList(ctx, "   ", "", nil); !errors.Is(err, ErrInvalidName) {
 		t.Errorf("blank name: got %v, want ErrInvalidName", err)
 	}
-	if _, err := s.CreateList(ctx, strings.Repeat("a", 121), ""); !errors.Is(err, ErrInvalidName) {
+	if _, err := s.CreateList(ctx, strings.Repeat("a", 121), "", nil); !errors.Is(err, ErrInvalidName) {
 		t.Errorf("oversized name: got %v, want ErrInvalidName", err)
 	}
-	if _, err := s.CreateList(ctx, "Compras", "magenta"); !errors.Is(err, ErrInvalidColor) {
+	if _, err := s.CreateList(ctx, "Compras", "magenta", nil); !errors.Is(err, ErrInvalidColor) {
 		t.Errorf("unknown color: got %v, want ErrInvalidColor", err)
 	}
 }

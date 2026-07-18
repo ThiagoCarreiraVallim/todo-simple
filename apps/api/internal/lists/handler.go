@@ -22,6 +22,8 @@ func NewHandler(service *Service) *Handler {
 
 func (h *Handler) Routes(r chi.Router) {
 	r.Post("/", h.createList)
+	r.Post("/claim", h.claimLists)
+	r.Get("/by-user/{userID}", h.listsByUser)
 	r.Route("/{slug}", func(r chi.Router) {
 		r.Get("/", h.getList)
 		r.Patch("/", h.updateList)
@@ -40,7 +42,8 @@ func writeError(w http.ResponseWriter, err error, action string) {
 	case errors.Is(err, pgx.ErrNoRows):
 		httpx.Error(w, http.StatusNotFound, "not found")
 	case errors.Is(err, ErrInvalidName), errors.Is(err, ErrInvalidTitle),
-		errors.Is(err, ErrInvalidColor), errors.Is(err, ErrEmptyUpdate):
+		errors.Is(err, ErrInvalidColor), errors.Is(err, ErrEmptyUpdate),
+		errors.Is(err, ErrInvalidUser):
 		httpx.Error(w, http.StatusBadRequest, err.Error())
 	case errors.Is(err, ErrStaleOrder):
 		httpx.Error(w, http.StatusConflict, err.Error())
@@ -51,8 +54,9 @@ func writeError(w http.ResponseWriter, err error, action string) {
 }
 
 type createListRequest struct {
-	Name  string `json:"name"`
-	Color string `json:"color"`
+	Name   string  `json:"name"`
+	Color  string  `json:"color"`
+	UserID *string `json:"userId"`
 }
 
 func (h *Handler) createList(w http.ResponseWriter, r *http.Request) {
@@ -61,12 +65,40 @@ func (h *Handler) createList(w http.ResponseWriter, r *http.Request) {
 		httpx.Error(w, http.StatusBadRequest, "invalid JSON body")
 		return
 	}
-	list, err := h.service.CreateList(r.Context(), body.Name, body.Color)
+	list, err := h.service.CreateList(r.Context(), body.Name, body.Color, body.UserID)
 	if err != nil {
 		writeError(w, err, "create list")
 		return
 	}
 	httpx.JSON(w, http.StatusCreated, list)
+}
+
+func (h *Handler) listsByUser(w http.ResponseWriter, r *http.Request) {
+	lists, err := h.service.ListsByUser(r.Context(), chi.URLParam(r, "userID"))
+	if err != nil {
+		writeError(w, err, "lists by user")
+		return
+	}
+	httpx.JSON(w, http.StatusOK, lists)
+}
+
+type claimListsRequest struct {
+	UserID string   `json:"userId"`
+	Slugs  []string `json:"slugs"`
+}
+
+func (h *Handler) claimLists(w http.ResponseWriter, r *http.Request) {
+	var body claimListsRequest
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		httpx.Error(w, http.StatusBadRequest, "invalid JSON body")
+		return
+	}
+	claimed, err := h.service.ClaimLists(r.Context(), body.UserID, body.Slugs)
+	if err != nil {
+		writeError(w, err, "claim lists")
+		return
+	}
+	httpx.JSON(w, http.StatusOK, map[string]int64{"claimed": claimed})
 }
 
 func (h *Handler) getList(w http.ResponseWriter, r *http.Request) {

@@ -17,6 +17,7 @@ var (
 	ErrInvalidTitle = errors.New("title must be 1-500 characters")
 	ErrInvalidColor = errors.New("color must be one of the palette tokens")
 	ErrEmptyUpdate  = errors.New("nothing to update")
+	ErrInvalidUser  = errors.New("userId must be a valid uuid")
 )
 
 // Colors is the fixed palette; the web app maps each token to its styles.
@@ -59,7 +60,9 @@ func validSlug(slug string) bool {
 	return slugPattern.MatchString(slug)
 }
 
-func (s *Service) CreateList(ctx context.Context, name, color string) (List, error) {
+// CreateList cria uma lista. userID opcional (nil = anônima): quando presente,
+// a lista já nasce vinculada ao usuário logado.
+func (s *Service) CreateList(ctx context.Context, name, color string, userID *string) (List, error) {
 	name = strings.TrimSpace(name)
 	if !validName(name) {
 		return List{}, ErrInvalidName
@@ -70,11 +73,39 @@ func (s *Service) CreateList(ctx context.Context, name, color string) (List, err
 	if !validColor(color) {
 		return List{}, ErrInvalidColor
 	}
+	if userID != nil && !ids.ValidUUID(*userID) {
+		return List{}, ErrInvalidUser
+	}
 	slug, err := ids.NewSlug()
 	if err != nil {
 		return List{}, fmt.Errorf("generate slug: %w", err)
 	}
-	return s.repo.CreateList(ctx, slug, name, color)
+	return s.repo.CreateList(ctx, slug, name, color, userID)
+}
+
+// ListsByUser retorna as listas vinculadas a um usuário.
+func (s *Service) ListsByUser(ctx context.Context, userID string) ([]List, error) {
+	if !ids.ValidUUID(userID) {
+		return nil, ErrInvalidUser
+	}
+	return s.repo.ListsByUser(ctx, userID)
+}
+
+// ClaimLists vincula ao usuário as listas (por slug) que ainda não têm dono.
+func (s *Service) ClaimLists(ctx context.Context, userID string, slugs []string) (int64, error) {
+	if !ids.ValidUUID(userID) {
+		return 0, ErrInvalidUser
+	}
+	valid := make([]string, 0, len(slugs))
+	for _, slug := range slugs {
+		if validSlug(slug) {
+			valid = append(valid, slug)
+		}
+	}
+	if len(valid) == 0 {
+		return 0, nil
+	}
+	return s.repo.ClaimLists(ctx, userID, valid)
 }
 
 func (s *Service) GetList(ctx context.Context, slug string) (ListWithTasks, error) {

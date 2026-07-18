@@ -10,8 +10,10 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/thiago/todo-simple-api/internal/config"
+	"github.com/thiago/todo-simple-api/internal/farm"
 	"github.com/thiago/todo-simple-api/internal/health"
 	"github.com/thiago/todo-simple-api/internal/lists"
+	"github.com/thiago/todo-simple-api/internal/users"
 )
 
 // New builds the HTTP server: middleware, routes, and dependency wiring.
@@ -36,6 +38,13 @@ func New(cfg config.Config, pool *pgxpool.Pool) *http.Server {
 
 	listsHandler := lists.NewHandler(lists.NewService(lists.NewRepository(pool)))
 	r.Route("/api/lists", listsHandler.Routes)
+
+	farmSvc := farm.NewService(farm.NewRepository(pool))
+	r.Route("/api/farm", farm.NewHandler(farmSvc).Routes)
+
+	// Login (get-or-create do usuário) garante a fazenda via FarmEnsurer.
+	usersHandler := users.NewHandler(users.NewService(users.NewRepository(pool)), farmSvc)
+	r.Post("/api/login", usersHandler.Login)
 
 	return &http.Server{
 		Addr:              ":" + cfg.Port,

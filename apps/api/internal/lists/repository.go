@@ -21,17 +21,64 @@ func NewRepository(pool *pgxpool.Pool) *Repository {
 	return &Repository{pool: pool}
 }
 
-func (r *Repository) CreateList(ctx context.Context, slug, name, color string) (List, error) {
+// CreateList insere a lista, opcionalmente já vinculada a um usuário (userID nil
+// = lista anônima, acessível só pelo slug).
+func (r *Repository) CreateList(ctx context.Context, slug, name, color string, userID *string) (List, error) {
 	var l List
 	row := r.pool.QueryRow(
 		ctx,
-		`INSERT INTO lists (slug, name, color) VALUES ($1, $2, $3) RETURNING slug, name, color, created_at`,
-		slug, name, color,
+		`INSERT INTO lists (slug, name, color, user_id) VALUES ($1, $2, $3, $4)
+		 RETURNING slug, name, color, created_at`,
+		slug, name, color, userID,
 	)
 	if err := row.Scan(&l.Slug, &l.Name, &l.Color, &l.CreatedAt); err != nil {
 		return List{}, fmt.Errorf("insert list: %w", err)
 	}
 	return l, nil
+}
+
+// ListsByUser retorna as listas de um usuário (mais recentes primeiro), para
+// recuperar as listas ao logar em outro aparelho.
+func (r *Repository) ListsByUser(ctx context.Context, userID string) ([]List, error) {
+	rows, err := r.pool.Query(
+		ctx,
+		`SELECT slug, name, color, created_at FROM lists
+		 WHERE user_id = $1 ORDER BY created_at DESC`,
+		userID,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("query lists by user: %w", err)
+	}
+	defer rows.Close()
+
+	out := make([]List, 0)
+	for rows.Next() {
+		var l List
+		if err := rows.Scan(&l.Slug, &l.Name, &l.Color, &l.CreatedAt); err != nil {
+			return nil, fmt.Errorf("scan list: %w", err)
+		}
+		out = append(out, l)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate lists: %w", err)
+	}
+	return out, nil
+}
+
+// ClaimLists vincula ao usuário as listas cujos slugs foram informados e que
+// ainda não têm dono (user_id IS NULL). Não rouba listas já pertencentes a
+// outro usuário. Retorna quantas foram vinculadas.
+func (r *Repository) ClaimLists(ctx context.Context, userID string, slugs []string) (int64, error) {
+	tag, err := r.pool.Exec(
+		ctx,
+		`UPDATE lists SET user_id = $1, updated_at = now()
+		 WHERE slug = ANY($2) AND user_id IS NULL`,
+		userID, slugs,
+	)
+	if err != nil {
+		return 0, fmt.Errorf("claim lists: %w", err)
+	}
+	return tag.RowsAffected(), nil
 }
 
 func (r *Repository) GetList(ctx context.Context, slug string) (ListWithTasks, error) {

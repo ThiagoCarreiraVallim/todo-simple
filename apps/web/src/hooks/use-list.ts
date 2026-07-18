@@ -1,11 +1,27 @@
 'use client';
 
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
 import { ApiError } from '@/lib/api';
 import { listsApi, type ListWithTasks, type Task } from '@/lib/api/lists';
+import { farmApi } from '@/lib/api/farm';
+import { useFarmSession } from '@/lib/farm-session';
+import { getSession } from '@/lib/session';
 import { removeKnownList, upsertKnownList } from '@/lib/local-index';
 
 const listKey = (slug: string) => ['list', slug] as const;
+
+// Alimenta a fazenda (se logado) quando uma tarefa é criada/concluída.
+// Best-effort: um erro aqui nunca deve quebrar a ação de tarefa.
+async function feedFarm(queryClient: QueryClient) {
+  const session = getSession();
+  if (!session) return;
+  try {
+    await farmApi.feed(session.userId);
+    queryClient.invalidateQueries({ queryKey: ['farm', session.userId] });
+  } catch {
+    // silencioso de propósito
+  }
+}
 
 export function useList(slug: string) {
   return useQuery({
@@ -21,8 +37,11 @@ export function useList(slug: string) {
 }
 
 export function useCreateList(onCreated: (slug: string) => void) {
+  // Se logado, a lista já nasce vinculada ao usuário (userId).
+  const { userId } = useFarmSession();
   return useMutation({
-    mutationFn: listsApi.create,
+    mutationFn: (input: { name: string; color?: string }) =>
+      listsApi.create(userId ? { ...input, userId } : input),
     onSuccess: (list) => {
       upsertKnownList(list);
       onCreated(list.slug);
@@ -59,6 +78,7 @@ export function useAddTask(slug: string) {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (title: string) => listsApi.addTask(slug, title),
+    onSuccess: () => feedFarm(queryClient),
     onSettled: () => queryClient.invalidateQueries({ queryKey: listKey(slug) }),
   });
 }
@@ -71,10 +91,12 @@ function useOptimisticTaskMutation<TInput>(
   slug: string,
   mutationFn: (input: TInput) => Promise<unknown>,
   apply: (tasks: Task[], input: TInput) => Task[],
+  onSuccess?: (input: TInput, queryClient: QueryClient) => void,
 ) {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn,
+    onSuccess: onSuccess ? (_data, input) => onSuccess(input, queryClient) : undefined,
     onMutate: async (input: TInput) => {
       await queryClient.cancelQueries({ queryKey: listKey(slug) });
       const previous = queryClient.getQueryData<ListWithTasks>(listKey(slug));
@@ -99,6 +121,10 @@ export function useToggleTask(slug: string) {
     (input: { taskId: string; done: boolean }) =>
       listsApi.updateTask(slug, input.taskId, { done: input.done }),
     (tasks, input) => tasks.map((t) => (t.id === input.taskId ? { ...t, done: input.done } : t)),
+    // alimenta a fazenda só quando conclui (não ao desmarcar)
+    (input, queryClient) => {
+      if (input.done) feedFarm(queryClient);
+    },
   );
 }
 

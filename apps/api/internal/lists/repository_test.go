@@ -37,7 +37,7 @@ func createTestList(t *testing.T, repo *Repository) List {
 	if err != nil {
 		t.Fatalf("slug: %v", err)
 	}
-	list, err := repo.CreateList(context.Background(), slug, "Lista de teste", DefaultColor)
+	list, err := repo.CreateList(context.Background(), slug, "Lista de teste", DefaultColor, nil)
 	if err != nil {
 		t.Fatalf("create list: %v", err)
 	}

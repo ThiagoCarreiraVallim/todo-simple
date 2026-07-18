@@ -31,7 +31,15 @@ function write(lists: KnownList[]) {
 }
 
 export function getKnownLists(): KnownList[] {
-  return read().sort((a, b) => (b.lastOpenedAt ?? '').localeCompare(a.lastOpenedAt ?? ''));
+  // Ordena por mais recente; empate de timestamp (mesmo ms) desempata pela
+  // ordem de inserção — o último inserido é o mais recente.
+  return read()
+    .map((list, index) => ({ list, index }))
+    .sort((a, b) => {
+      const cmp = (b.list.lastOpenedAt ?? '').localeCompare(a.list.lastOpenedAt ?? '');
+      return cmp !== 0 ? cmp : b.index - a.index;
+    })
+    .map((entry) => entry.list);
 }
 
 export function upsertKnownList(list: { slug: string; name: string; color: string }) {

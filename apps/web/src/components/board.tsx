@@ -1,9 +1,11 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { FarmPanel } from '@/components/farm-panel';
 import { ListTabs } from '@/components/list-tabs';
 import { ListView } from '@/components/list-view';
 import { NewListForm } from '@/components/new-list-form';
+import { useFarmSession } from '@/lib/farm-session';
 import { getKnownLists, type KnownList } from '@/lib/local-index';
 
 interface BoardProps {
@@ -18,6 +20,7 @@ export function Board({ initialSlug }: BoardProps) {
   const [known, setKnown] = useState<KnownList[]>([]);
   const [activeSlug, setActiveSlug] = useState<string | null>(initialSlug ?? null);
   const [creating, setCreating] = useState(false);
+  const { userId } = useFarmSession();
 
   useEffect(() => {
     const lists = getKnownLists();
@@ -29,6 +32,26 @@ export function Board({ initialSlug }: BoardProps) {
     setMounted(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Ao logar/deslogar, o índice local muda (listas do usuário são mescladas):
+  // relê e, se nenhuma aba estiver ativa, seleciona a primeira.
+  const firstUserEffect = useRef(true);
+  useEffect(() => {
+    if (firstUserEffect.current) {
+      firstUserEffect.current = false;
+      return;
+    }
+    const lists = getKnownLists();
+    setKnown(lists);
+    if (lists.length > 0) setCreating(false);
+    setActiveSlug((current) => {
+      if (current) return current;
+      const next = lists[0]?.slug ?? null;
+      syncUrl(next);
+      return next;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userId]);
 
   // Troca de aba sem navegação: a URL acompanha para o link ser compartilhável.
   const syncUrl = (slug: string | null) => {
@@ -82,6 +105,8 @@ export function Board({ initialSlug }: BoardProps) {
           />
         )
       )}
+      {/* A fazenda é global (por-pessoa) e fica no rodapé, sob todas as listas. */}
+      <FarmPanel />
     </div>
   );
 }
